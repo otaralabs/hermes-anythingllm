@@ -59,6 +59,32 @@ algo de interactividad puntual (islands). SEO y accesibilidad al 100 como invari
 - **Tailwind CSS `^4.3`** vía `@tailwindcss/vite` (Tailwind v4, sin `tailwind.config` clásico).
 - **TypeScript `^5`**; typecheck con **`astro check`** (`@astrojs/check ^0.9`).
 - **Sitemap:** `@astrojs/sitemap ^3.7`. **Email:** `resend ^6`.
+- **Analítica web:** **Umami** (MIT), **recolectada first-party** desde el propio origen (`/stats/script.js`
+  + `/stats/api/send`, endpoints de Astro que proxean transparente). Cookieless, sin perfilado, DNT+GPC
+  respetados y **allowlist de query params** (nunca PII). **Self-hosteado** en el cluster
+  (`otara-infra/apps/umami/`, vendored §6); `UMAMI_SCRIPT_URL`/`UMAMI_COLLECT_URL` apuntan ahí.
+  ⛔ **Recolectar first-party contra Umami Cloud NO funciona y no es opinable — medido el 2026-07-17** (ver
+  `apps/web/CHANGELOG.md`): el Cloud **ignora el `X-Forwarded-For`** de un llamador cualquiera (está detrás
+  de Cloudflare), así que el motor ve la IP del *proxy*, no la del visitante ⇒ **geo y visitantes únicos
+  falsos, sin ningún error visible**. Caso conocido del proveedor con este mismo stack
+  ([umami#2129](https://github.com/umami-software/umami/issues/2129), `#3478`, `#3583`). **Regla para
+  cualquier proyecto:** proxy de ingesta first-party ⇒ el motor va self-hosteado; si el motor es SaaS, el
+  beacon va directo desde el navegador (y se paga el precio de los ad-blockers). No se pueden las dos.
+  ⚠ **Y self-hostear no alcanza por sí solo:** el ingress también rompe la cadena. Traefik **reescribe**
+  `x-forwarded-for` e **impone** `x-real-ip` con la IP de quien conecta (nosotros), y en la lista de
+  precedencia de Umami `x-real-ip` **gana** sobre `x-forwarded-for` ⇒ el mismo dato falso por otra puerta.
+  Por eso la IP viaja en un **header propio** (fuera de la familia `x-forwarded-*`, que ningún proxy
+  reescribe) declarado con **`CLIENT_IP_HEADER`**, que vence a toda la lista. Medido con la imagen real, no
+  deducido de los docs.
+  *Desviación registrada (§Cómo
+  desviarse):* **(1)** no había default de analítica web —el único analytics del repo era GameAnalytics para
+  juegos mobile (§4.mobile)—; **(2)** se elige Umami por ser el más liviano de self-hostear (Node+Postgres,
+  no ClickHouse), cookieless y con eventos/funnels propios — y el self-host resultó **requisito, no
+  preferencia** (ver arriba); **(3)** costo permanente: dos endpoints de proxy + un servicio más que operar
+  (Node + Postgres + su backup). A cambio no hay ningún procesador de terceros que declarar. ⚠ **No usar
+  `vercel.json` `rewrites`** para esto: con
+  el adapter de Astro **rompe el deploy** (el adapter genera el routing por Build Output API) — por eso el
+  proxy son Server Endpoints, que además son portables a k3s.
 - **Tests:** **Vitest `^4`** (unit) + **`vitest-axe`** (a11y de componentes) + **Playwright `^1.60`**
   con **`@axe-core/playwright ^4.11`** (e2e: `a11y.spec.ts`, `seo.spec.ts`, `contrast.spec.ts`).
 - **Lint a11y:** ESLint `^9` + `eslint-plugin-astro` + `eslint-plugin-jsx-a11y`.

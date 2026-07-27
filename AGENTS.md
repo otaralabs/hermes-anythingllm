@@ -189,6 +189,18 @@ son las reglas de **proceso**, que no cambian:
 > (TDD) + e2e (spec de comportamiento y/o verificación de salida perceptible)**, y **perf** si toca el
 > hot path. No son alternativas; son filtros independientes. Unas verifican la **salida** (¿produce el
 > resultado correcto?) y otras el **diseño** (¿está hecho de la forma correcta?).
+>
+> **"Todo" es literal — no existe el cambio demasiado chico.** Un `include`, un default, una línea de
+> config, un texto de cara al usuario, un fix de una palabra: si cambia el comportamiento observable,
+> lleva su verificación escrita **antes**. "Es trivial", "es obvio", "ya andaba", "lo cubre otro test",
+> "lo agarra el CI" y "lo probé a mano" **no** son razones — son las frases con las que se saltea. Si
+> tocás algo que **ya funcionaba pero no tenía test**, el test se agrega igual **en esa PR**: sin él,
+> nada impide que el próximo cambio lo rompa en silencio.
+>
+> **Un gap declarado no es un permiso.** Los escapes (WIP/deferred de §2.A, "verification gap" de §3)
+> son para lo que **no se puede** verificar todavía, jamás para lo que no se quiso: se declaran en el
+> PR **y** entran a `BACKLOG.md` con su follow-up. Un PR sin verificación que tampoco declara el gap
+> **no se mergea**.
 
 ### 2.A De salida — artefacto verificable escrito ANTES del código
 
