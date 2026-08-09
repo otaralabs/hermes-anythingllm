@@ -32,3 +32,8 @@ paths:
   - 'cicd.yml'
   - '.woodpecker.yml'
   - 'AGENTS.md'
+
+pipeline:
+  # Repo PÚBLICO: los minutos hosted son GRATIS en repos públicos, y el grupo de runners de la org no
+  # admite públicos (allows_public_repositories: false). Gratis en GitHub > pagado en DO para este caso.
+  runs_on: ubuntu-latest
