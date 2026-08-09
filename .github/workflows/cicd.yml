@@ -1,0 +1,160 @@
+# ⚠ ARCHIVO GENERADO por `cicd render-pipeline --target actions` — NO EDITAR A MANO.
+#
+# Fuente de verdad: `cicd.yml` (`.paths` = allowlist de disparo, `.images` = imagen por job) + la plantilla
+# del motor. Para cambiar el pipeline, cambiá uno de esos dos y corré el generador.
+#
+# El job `security` corre `render-pipeline --check`: si este archivo quedó desincronizado de su fuente
+# (porque alguien lo editó a mano), el CI falla. Un generado que nadie vigila se pudre igual que un copiado.
+name: CI
+
+on:
+  # ⚠ SIN `paths:`. Es de WORKFLOW, no de job: filtraría también a `security`, que debe correr SIEMPRE
+  # (Trivy caza un secreto commiteado hasta en un README). El filtro por job lo hace el job `changes`.
+  #
+  # `push` restringido a main: sin eso, cada commit de una rama corre el pipeline DOS VECES sobre el mismo
+  # SHA —una por el push y otra por el pull_request—. El PR ya se re-dispara en cada commit nuevo.
+  pull_request:
+  push:
+    branches: [main]
+
+# Se cancela el run previo de una PR (feedback rápido), pero NUNCA el de main: cancelar un push a main
+# dejaría un release sin su deploy, o sea una VERSIÓN FANTASMA. En Woodpecker esto era un setting de repo
+# (`cancel_previous_pipeline_events`); en Actions vive en el YAML, y por eso lo emite el generador.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Dentro de un `container:` Actions usa `sh -e {0}`, y en las imágenes del toolkit `sh` es dash, que no
+# conoce `pipefail` (`set: Illegal option -o pipefail`). Sin pipefail, además, un `curl … | tar` que falla
+# del lado del curl pasaría como éxito: un gate que no falla y no hace nada.
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  # Evalúa la allowlist de `.paths` y publica el veredicto para que los demás jobs lo consulten. Existe
+  # porque en Actions no hay filtro de path a nivel job (ver el encabezado de steps/render_actions.sh).
+  changes:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/nicolasbatistoni/cicd-toolkit:latest
+      credentials:
+        username: ${{ secrets.GHCR_USER }}
+        password: ${{ secrets.GHCR_TOKEN }}
+    outputs:
+      code: ${{ steps.cp.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: git safe.directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - id: cp
+        # `CICD_OUTPUT_FILE` en vez de capturar stdout: el motor imprime ahí su banner y su `✓ OK`, así que
+        # un `$(…)` capturaría basura y el `if` de los jobs la leería como «no matcheó» — el pipeline
+        # dejaría de correr en silencio.
+        env:
+          CICD_OUTPUT_KEY: code
+          # En una PR, el ancestro común con la base. En un push, el commit anterior — que en el PRIMER
+          # push de una rama GitHub manda en CEROS (`000…0`), un ref que no existe: el motor lo detecta y
+          # cae al padre del HEAD en vez de reventar el `git diff`.
+          CICD_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: CICD_OUTPUT_FILE="$GITHUB_OUTPUT" cicd changed-paths
+
+  # SIN `if` y SIN `needs`: corre SIEMPRE. Única excepción de toda la flota, y deliberada — Trivy caza un
+  # secreto commiteado hasta en un README, y los guards tienen que correr aunque el commit no toque código.
+  security:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/nicolasbatistoni/cicd-toolkit:latest
+      credentials:
+        username: ${{ secrets.GHCR_USER }}
+        password: ${{ secrets.GHCR_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: git safe.directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - run: cicd security
+      - name: paths-guard
+        run: cicd paths-guard
+      - name: render-pipeline --check
+        run: cicd render-pipeline --target actions --check
+
+  # ⚠ EL `if` NO ES `always()`. `needs` cancela el job si una dependencia se saltea, y `ci` se saltea
+  # legítimamente cuando el commit no toca la allowlist — ahí el release igual tiene que correr. Pero un
+  # `ci` en FALLO tiene que frenarlo: `always()` a secas publicaría sobre gates rojos. De ahí la condición
+  # explícita: security en success, y ci en success O skipped.
+  release:
+    needs: [security, changes]
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main'
+      && needs.changes.outputs.code == 'true'
+      && needs.security.result == 'success'
+    runs-on: ubuntu-latest
+    # Mínimo privilegio POR JOB (AGENTS §1.bis): el único que escribe es éste. El `permissions` global es
+    # `contents: read`, y con eso el push del bump y del tag vuelve 403 "Write access to repository not
+    # granted" — que el motor reporta como "la rama se movió" y contra el que quema sus 5 reintentos, o sea
+    # el peor mensaje posible para la causa real. Lo pagó `media-server` en su primer release migrado.
+    #
+    # ⚠ `permissions` a nivel job REEMPLAZA el set global, no lo mezcla: `packages` se re-declara acá o el
+    # release lo pierde.
+    permissions:
+      contents: write
+      packages: read
+    container:
+      image: ghcr.io/nicolasbatistoni/cicd-toolkit:latest
+      credentials:
+        username: ${{ secrets.GHCR_USER }}
+        password: ${{ secrets.GHCR_TOKEN }}
+    env:
+      # El release empuja el tag y crea el Release: sin credencial no hace su trabajo. Antes esto vivía en
+      # cada adaptador a mano y 19 de 27 NO lo tenían.
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: git safe.directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - run: cicd release
+
+  automerge:
+    needs: [changes, security]
+    if: >-
+      !cancelled()
+      && github.event_name == 'pull_request'
+      && needs.changes.result == 'success'
+      && needs.security.result == 'success'
+    runs-on: ubuntu-latest
+    # `permissions` por job REEMPLAZA el set global, no lo mezcla: hay que declarar los dos.
+    permissions:
+      contents: write      # el merge escribe en la rama por defecto
+      pull-requests: write # y cierra la PR
+    container:
+      image: ghcr.io/nicolasbatistoni/cicd-toolkit:latest
+      credentials:
+        username: ${{ secrets.GHCR_USER }}
+        password: ${{ secrets.GHCR_TOKEN }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # El motor lee el contexto del CI por env y MUERE si falta un dato, en vez de adivinar qué mergear.
+      # Acá se traducen los nombres de Woodpecker a los del contexto de Actions.
+      CI_PIPELINE_EVENT: ${{ github.event_name }}
+      CI_COMMIT_PULL_REQUEST: ${{ github.event.pull_request.number }}
+      # ⚠ EL HEAD DE LA RAMA, **NO** `github.sha`. En un evento `pull_request`, `github.sha` es el commit
+      # de MERGE que GitHub sintetiza y que no existe en la rama. El motor se lo pasa a
+      # `gh pr merge --match-head-commit`, cuyo trabajo es fallar si la rama se movió durante el CI en vez
+      # de llevarse un commit que ningún gate miró. Con el sha equivocado, esa protección no protege.
+      CI_COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+      CI_COMMIT_SOURCE_BRANCH: ${{ github.head_ref }}
+      CI_COMMIT_TARGET_BRANCH: ${{ github.event.pull_request.base.ref }}
+      CI_REPO_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: git safe.directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - run: cicd automerge

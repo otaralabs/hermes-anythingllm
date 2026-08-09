@@ -56,3 +56,11 @@ steps:
         path: *code_paths
     environment:
       GH_TOKEN: { from_secret: gh_token }
+
+  automerge:
+    image: *toolkit
+    commands: [cicd automerge]
+    when:
+      - event: pull_request
+    environment:
+      GH_TOKEN: { from_secret: gh_token }
