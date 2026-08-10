@@ -139,7 +139,11 @@ jobs:
         username: ${{ secrets.GHCR_USER }}
         password: ${{ secrets.GHCR_TOKEN }}
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # ⚠ PAT, **NO** `GITHUB_TOKEN`, y no es por permisos. GitHub NO dispara workflows por pushes hechos
+      # con el `GITHUB_TOKEN` (anti-recursión): el squash-merge a `main` no gatillaría el run de push, o
+      # sea que `release`/`deploy`/`promote` no correrían NUNCA. Medido en la flota (2026-08-09): 12 repos
+      # mergeados por app/github-actions y CERO runs de main después — CD muerta en silencio, PRs verdes.
+      GH_TOKEN: ${{ secrets.PROMOTE_TOKEN }}
       # El motor lee el contexto del CI por env y MUERE si falta un dato, en vez de adivinar qué mergear.
       # Acá se traducen los nombres de Woodpecker a los del contexto de Actions.
       CI_PIPELINE_EVENT: ${{ github.event_name }}
