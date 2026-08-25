@@ -97,7 +97,8 @@ corta más, §6).
 Nombres de rama describen **scope, no actor**: `feat-…`, `fix-…`, `chore-…`, `docs-…`. Evitar nombres
 con el actor o con fecha.
 
-**El merge lo dispara el CI, no una persona esperando** (`cicd automerge`, opt-in por repo): el
+**El merge lo dispara el CI, no una persona esperando** (`cicd automerge`, ON por default; el opt-out
+`automerge: false` se declara con motivo): el
 "esperar → verificar → mergear" es **polling, no juicio**. El step va **ÚLTIMO** en el pipeline de PR, así
 que **llegar ahí ES la prueba** de que los gates de §3 pasaron (el CI corta al primer fallo) — no consulta
 "¿está verde?", que sería confiar en un estado que puede mentir o llegar tarde. Mergea **exigiendo el sha
@@ -108,7 +109,7 @@ del agente y pasa **ANTES** de abrir la PR: la entrada del CHANGELOG, los bloque
 no-regresión de la flota. El automerge los **da por hechos**; no los reemplaza ni los verifica. Encenderlo
 en un repo cuyo agente no los hace es **sacar** gates, no automatizarlos.
 
-**Donde el automerge no esté encendido, mergea el agente** (squash + delete branch) una vez que pasan los
+**Donde el automerge esté apagado a propósito, mergea el agente** (squash + delete branch) una vez que pasan los
 gates de §3, **nunca lo deja para el usuario**: una PR verde esperando que un humano apriete "merge" es
 trabajo sin terminar, no un entregable. El usuario NO gatea cada merge — la forma de la PR + verificación
 + diff limpio son el gate; gatea solo si lo pide o si el cambio es high-risk (arquitectónico,
@@ -181,7 +182,9 @@ son las reglas de **proceso**, que no cambian:
 - **Frontera de dependencias explícita:** las deps entre paquetes van en una sola dirección válida (cf.
   §2.B SADD); un paquete no importa internals de otro por fuera de su API pública.
 - **Lo compartido, una sola vez (DRY):** config, hooks, motor de CI/CD y disciplinas viven a nivel raíz y
-  se heredan; no se duplican por paquete.
+  se heredan; no se duplican por paquete. ⚠ Eso es **proceso**, no **dependencias**: cada unidad
+  desplegable se basta a sí misma (lock, build context y scanner de vulns propios) y puede ser de **otro
+  lenguaje**. Un lock compartido entre unidades acopla su CI y su release — prohibido (`STACKS.md §0.bis`).
 
 ## 2. Las disciplinas de verificación — verification first
 
@@ -347,23 +350,24 @@ la raíz van con basename en MAYÚSCULAS** (`GOAL.md`, `README.md`, `IDEAS.md`, 
   se QUITA de `BACKLOG.md` y su registro pasa a `CHANGELOG.md`** (mover, no copiar): no se deja la tarea
   marcada `✅` en BACKLOG. BACKLOG contiene solo lo pendiente/en curso.
 - **`CHANGELOG.md`** — append-only: cada PR mergeado = entry (título + fecha + cambios + verificación).
+  ⚠ La entry va en **`changelog.d/<algo>.md`**, NO en el CHANGELOG: dos PRs nunca tocan el mismo archivo,
+  así que no hay conflicto (el `automerge` moría por eso). El `release` las pliega y borra. Opt-in: sin
+  `changelog.d/` nada cambia. Detalle: [`docs/changelog-fragmentos.md`](docs/changelog-fragmentos.md).
 - **Blog del lab ("Notas")** — capa editorial sobre el changelog (*qué* cambió lo dice el changelog; la
-  nota, **por qué, cómo funciona y qué impacto tiene**): **una nota por proyecto y por día**, agregada en
-  el **mismo merge** que entrega material, como el CHANGELOG (día denso → notas temáticas de la misma
-  fecha; día sin material → no se publica). **El trabajo de cliente NO se publica** (§6). Notas en
-  `otara-labs/apps/web/src/content/blog/`; formato y reglas de transformación en el canónico
-  **`project-template/docs/blog-editorial.md`**.
+  nota, **por qué, cómo funciona y qué impacto tiene**): **una nota por proyecto y por día**, en el
+  **mismo merge** que entrega material. **El trabajo de cliente NO se publica** (§6). Notas en
+  `otara-labs/apps/web/src/content/blog/`; spec en **`project-template/docs/blog-editorial.md`**.
 - **Docs narrativos/de showcase** (si el proyecto los tiene, p. ej. lore o portfolio) — avanzan **en
   paralelo** al código: una feature nueva sin su entrada correspondiente está incompleta; reflejan el
   mejor estado actual, no un snapshot viejo.
 
 **Flujo de movimiento (regla dura): IDEAS → BACKLOG → CHANGELOG, siempre MOVIENDO (quitar del origen,
-agregar al destino), nunca copiando ni dejando duplicado.**
+agregar al destino), nunca copiando.**
 
-**Flujo cada PR:** actualizar CHANGELOG (siempre que entregue algo, **quitando** la tarea de BACKLOG) +
+**Flujo cada PR:** escribir su fragmento de changelog (siempre que entregue algo, **quitando** la tarea de BACKLOG) +
 **sumar la nota del blog** del día/proyecto si el cambio tiene material editorial (no aplica a trabajo de
 cliente) + mover ideas maduradas de IDEAS a BACKLOG en el mismo merge. README solo si cambió algo
-estático. Un PR que entrega y NO toca CHANGELOG bloquea la coherencia. Re-evaluar showcase/README cada
+estático. Un PR que entrega sin su fragmento bloquea la coherencia. Re-evaluar showcase/README cada
 iteración que avance lo que se ve o se promete (actualizarlos en el mismo merge; ninguno queda mostrando
 un estado peor o desactualizado).
 
@@ -507,4 +511,5 @@ recurso compartido, y lo que se consulta de vez en cuando no tiene que ocupar co
 queda acá; el procedimiento, allá — nada se perdió:
 `project-template/docs/flags.md` (§3.ter: la escalera completa, tipos de flag, dependencias) ·
 `project-template/docs/portfolio.md` (§3.quinquies: estructura, `meta.yml`, privacidad) ·
-`project-template/docs/blog-editorial.md` (§3.bis: spec del blog del lab).
+`project-template/docs/blog-editorial.md` (§3.bis: spec del blog del lab) ·
+`project-template/docs/verificacion-de-efecto.md` (§2: comprobar que lo declarado hizo EFECTO).
