@@ -19,7 +19,7 @@
 | **Sitio web estático** (landing, portfolio, institucional, marketing) | **TypeScript** | **Astro** + React (islands) + Tailwind | `otara-labs/apps/web` |
 | **Sitio web dinámico** (SSR/SSG con datos, auth, panel, e-commerce) | **TypeScript** | **Next.js** (App Router) + React + Tailwind | `casa-raiz` |
 | **Web app / SaaS con backend propio** (API + SPA, multi-tenant, realtime) | **JavaScript/TypeScript (Node)** | **Node** + Express + Mongoose + MongoDB + React (Vite) | `nicoq/doble-yema` |
-| **Microservicio / worker / API chica** (envío de mail, impresión, jobs) | **Node** | **Node** + Express (HTTP) o proceso + libs puntuales | `otara-labs/apps/mail-api`, `fran-colarusso/riviera-worker` |
+| **Microservicio / worker / API chica** (impresión, jobs, integración) | **Node** o **Python** | **Node** + Express (HTTP) o proceso + libs puntuales · **Python 3.12+** + FastAPI cuando el dominio es de datos/IA (§5). Cumple **§0.bis Unidad Autónoma** — lock propio, `context: .`, `cicd.yml` propio | `fran-colarusso/riviera-worker` |
 | **Videojuego / motor 3D propio** (control total, perf máxima) | **C++** | **C++20** + **Vulkan 1.3** (motor propio) | `spacesim-c` |
 | **Videojuego con motor (prototipo rápido / multiplataforma)** | GDScript / C++ | **Godot 4.x** *(prototipo 2D/3D)* · **Unreal Engine 5.x** *(AAA/Nanite-Lumen)* | `spacesim-godot` (4.6), `gangsters`/`spacesim-pixelart-godot`, `procedural-space-sim` (UE 5.7) |
 | **Juego mobile hyper-casual (Android, monetizado con ads)** | GDScript | **Godot 4.7** (GL Compatibility) + export Android/gradle + **AdMob** (plugin) + **GameAnalytics** + firma keystore + publish Play API | `godot-games/games/*` mobile (ver §4.mobile) |
@@ -45,6 +45,70 @@
    prototipo o equipo chico, **Godot/UE5**.
 5. ¿Es IA/datos/robótica? → **Python** por defecto; **C++** solo si el hot path no tolera Python.
 6. ¿Es una herramienta de línea de comandos o automatización? → **Python** (Typer).
+
+---
+
+## 0.bis Unidad Autónoma — la frontera física de un servicio
+
+> **La frontera de un servicio es la unidad desplegable, y esa unidad se basta a sí misma.** Es lo que
+> permite que un monorepo tenga proyectos de **lenguajes distintos** sin que el stack de uno contamine al
+> otro: un servicio Go o Python es un directorio con su `Dockerfile` y su `cicd.yml`, y nada del repo
+> asume npm.
+
+Una unidad desplegable **posee, dentro de su propio directorio**:
+
+1. **Su manifiesto de deps y su lock** — `package.json`+`package-lock.json`, `pyproject.toml`+`uv.lock`,
+   `go.mod`+`go.sum`, `Cargo.toml`+`Cargo.lock`. **Nunca un lock compartido entre unidades.**
+2. **Su `Dockerfile` con `context: .`** — el build context es su directorio, no la raíz del repo.
+3. **Su `cicd.yml`** — `images.ci` (la imagen del CI de **su** stack), `install`/`lint`/`build`/`test`
+   (los comandos de su stack), `release.tag_pattern` (`<unidad>-v*`), `deploy.images`, `promote`.
+4. **Su path-filter = su directorio** (+ los contratos que consume). Nada de cierres de deps a mano.
+5. **Sus manifests** (`infra/k8s/`) y su pin de versión en el repo de entorno.
+6. **Su gate de vulnerabilidades** con el scanner de su ecosistema (npm → `npm audit`; Python →
+   `pip-audit`; Go → `govulncheck`).
+7. **Sus tests** y sus entradas de CHANGELOG.
+
+**Sólo tres cosas cruzan la frontera entre unidades:**
+
+| Permitido | Prohibido |
+|---|---|
+| El **contrato versionado** (spec agnóstico: OpenAPI/JSON Schema + cliente generado por lenguaje) | Import por **path** al código de otra unidad |
+| Un **paquete publicado** con SemVer desde un registry | `file:`/symlink/workspace cruzando unidades |
+| **HTTP** (con su contrato y su auth) | **Base de datos compartida** entre unidades |
+
+**Corolario sobre monorepos npm:** un `workspaces` con lock único acopla el build de todas sus unidades
+— un bump de dependencia dispara el CI de todas, el `Dockerfile` necesita contexto-raíz (y pierde cache),
+y una vulnerabilidad en el lock bloquea el release de todas a la vez. **No se usa `npm workspaces` para
+agrupar unidades desplegables.** Es aceptable *dentro* de una unidad (un producto que publica una imagen
+con su API + su SPA + sus librerías internas).
+
+**Referencia viva:** `otara-labs/apps/web` y `otara-labs/apps/queze/landing` (lock propio, `context: .`).
+
+### Layout hexagonal de un servicio (el que realmente se usa)
+
+Para un servicio con dominio real, la unidad se organiza por **bounded context**, y cada uno con sus tres
+capas — no un `domain/` global:
+
+```
+src/
+├── modules/<contexto>/           # p.ej. billing, identity, subscription
+│   ├── domain/                   # entidades + reglas puras (sin IO, sin framework)
+│   ├── application/
+│   │   ├── ports.ts              # interfaces (driven ports)
+│   │   └── <caso-de-uso>.ts      # + su test al lado
+│   └── infrastructure/           # adapters: mongoose/, stripe/, mercadopago/
+├── composition/                  # composition root: el wiring de puertos → adapters
+└── http/                         # adapters de entrada (routers Express / route handlers)
+```
+
+**Dirección de dependencias:** hacia adentro. `domain/` no importa `application/` ni `infrastructure/`;
+`infrastructure/` implementa las interfaces de `application/ports`. Referencia:
+`otara-labs/apps/platform/src/modules/` y `otara-labs/apps/placard/api/src/modules/`.
+
+**Strategy para lo intercambiable:** cuando hay N proveedores del mismo servicio (cobro, mail, storage),
+va **un puerto + N adapters + un resolver** que elige por configuración — nunca un `if` por proveedor
+desparramado. Referencia: `apps/platform/src/modules/billing/` (`ports.ts` + `infrastructure/stripe/` +
+`infrastructure/mercadopago/` + `currency-payment-provider-resolver.ts`).
 
 ---
 
@@ -108,7 +172,10 @@ e-commerce, rutas dinámicas. App Router.
 ## 3. Web app / SaaS — Node + Express + Mongoose + MongoDB + React
 
 **Cuándo:** producto con **backend propio** (API REST/realtime) + cliente SPA + base de datos.
-Separar `apps/api` (backend) y `apps/web` (frontend) en un monorepo.
+Separar `api/` (backend) y `web/` (frontend) como subdirectorios **de la misma unidad desplegable**
+(§0.bis): el server sirve el bundle del SPA desde su propio contenedor, con **una imagen, un tag y un
+pin**. El SPA es un artefacto de build del servicio, no un servicio aparte — separarlo agrega CORS, dos
+pins y despliegues a coordinar sin beneficio. Referencia: `otara-labs/apps/queze`, `otara-labs/apps/placard`.
 
 **Stack de referencia (`nicoq/doble-yema`):**
 - **Backend (`apps/api`):** **Node** + **Express `^4.19`** + **Mongoose `^8`** sobre **MongoDB**.
@@ -121,8 +188,9 @@ Separar `apps/api` (backend) y `apps/web` (frontend) en un monorepo.
     de componentes accesible por default; **TanStack Query** para estado de servidor. Package manager:
     **npm** por default, **Bun** aceptado cuando el repo ya lo usa (`bun.lockb`) — uno solo por repo.
   - **Tests:** Vitest + Testing Library + Playwright + `@axe-core/playwright` + `jest-axe` + LHCI.
-- **Microservicios/workers** (`otara-labs/apps/mail-api`, `fran-colarusso/riviera/worker`): Node
-  minimal — Express solo si expone HTTP; libs puntuales (`axios`, `cron`, `pg`, `escpos`) según tarea.
+- **Microservicios/workers** (`fran-colarusso/riviera/worker`): Node minimal — Express solo si expone
+  HTTP; libs puntuales (`axios`, `cron`, `pg`, `escpos`) según tarea. Cada uno es una **Unidad Autónoma**
+  (§0.bis), y su lenguaje se elige por el dominio: no tiene por qué ser el del resto del repo.
 
 > **Express + Mongoose + MongoDB + React** es el default de web app. PostgreSQL (`pg`) solo cuando el
 > dominio es fuertemente relacional/transaccional (caso worker de impresión sobre Postgres existente).
@@ -245,6 +313,21 @@ fila §0) aplicado a desktop, con el toolchain de export/publicación que abajo 
 - **CLI:** **Typer**. **Config/logs:** `pyyaml`, `structlog`. **MCP:** SDK `mcp[cli]`.
 - **Tests:** **pytest** (+ `pytest-asyncio`, `pytest-bdd`, `pytest-benchmark`, `pytest-cov`).
   **Lint/format:** **ruff**.
+
+**Servicio Python desplegado en el cluster** (API/worker que corre como imagen, no como script local) —
+cumple **§0.bis Unidad Autónoma**, y ésta es su concreción:
+- **Deps + lock:** `pyproject.toml` + **`uv.lock`** (`uv sync --frozen` en el build; lock **propio** de la
+  unidad, nunca compartido). Python pinneado por `.python-version`.
+- **Lint/format:** **ruff** (`ruff check` + `ruff format --check`). **Tipos:** **mypy** en estricto sobre
+  `domain/` y `application/` como mínimo.
+- **Tests:** **pytest** (+ `pytest-asyncio`); e2e por HTTP contra el servicio levantado.
+- **Gate de vulnerabilidades propio:** **`pip-audit`** (el equivalente del `npm audit` de las unidades
+  Node — cada unidad tiene el scanner de su ecosistema, no el del vecino).
+- **`cicd.yml` propio** con `images.ci` de una imagen Python y sus `install`/`lint`/`build`/`test`.
+- **Arquitectura:** hexagonal (`src/<paquete>/modules/<contexto>/{domain,application,infrastructure}`),
+  con FastAPI como **adapter de entrada** — el dominio no importa FastAPI ni el driver de la DB.
+- Si habla con el control plane, **genera su cliente desde el spec** del contrato (§0.bis) y corre la
+  suite de conformidad por HTTP; no reimplementa los DTOs a mano.
 
 **Stack de referencia robótica / edge (`rpi-self-awareness` — ARIA · `arduplane-gy-87`):**
 - **Python** para visión y control de alto nivel en hardware chico (RPi): `opencv-python-headless`,
