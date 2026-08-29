@@ -22,7 +22,7 @@ on:
 # (`cancel_previous_pipeline_events`); en Actions vive en el YAML, y por eso lo emite el generador.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 # Dentro de un `container:` Actions usa `sh -e {0}`, y en las imágenes del toolkit `sh` es dash, que no
 # conoce `pipefail` (`set: Illegal option -o pipefail`). Sin pipefail, además, un `curl … | tar` que falla
@@ -34,6 +34,7 @@ defaults:
 permissions:
   contents: read
   packages: read
+  actions: read # changed-paths lee las corridas de este workflow para hallar el último main verde
 
 jobs:
   # Evalúa la allowlist de `.paths` y publica el veredicto para que los demás jobs lo consulten. Existe
@@ -42,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     container:
-      image: ghcr.io/nicolasbatistoni/cicd-toolkit:latest
+      image: ghcr.io/nicolasbatistoni/cicd-toolkit:0.89.0@sha256:1760fc8a736bebd5d69e890f847886291848bbcdc77f4ad2c3537b432f6b2c7f
       credentials:
         username: ${{ secrets.GHCR_USER }}
         password: ${{ secrets.GHCR_TOKEN }}
@@ -63,6 +64,10 @@ jobs:
           # push de una rama GitHub manda en CEROS (`000…0`), un ref que no existe: el motor lo detecta y
           # cae al padre del HEAD en vez de reventar el `git diff`.
           CICD_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # En un push, changed-paths PREFIERE el último main verde de este workflow como base (necesita el
+          # token para leer las corridas): así la corrida que sobrevive al colapso de pendientes cubre a las
+          # canceladas. Sin token cae a CICD_DIFF_BASE. Ver `_cp_last_green` en changed_paths.sh.
+          GH_TOKEN: ${{ github.token }}
         run: CICD_OUTPUT_FILE="$GITHUB_OUTPUT" cicd changed-paths
 
   # SIN `if` y SIN `needs`: corre SIEMPRE. Única excepción de toda la flota, y deliberada — Trivy caza un
@@ -71,7 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     container:
-      image: ghcr.io/nicolasbatistoni/cicd-toolkit:latest
+      image: ghcr.io/nicolasbatistoni/cicd-toolkit:0.89.0@sha256:1760fc8a736bebd5d69e890f847886291848bbcdc77f4ad2c3537b432f6b2c7f
       credentials:
         username: ${{ secrets.GHCR_USER }}
         password: ${{ secrets.GHCR_TOKEN }}
@@ -85,6 +90,8 @@ jobs:
         run: cicd paths-guard
       - name: render-pipeline --check
         run: cicd render-pipeline --target actions --check
+      - name: install-hooks --check
+        run: cicd install-hooks --check
 
   # ⚠ EL `if` NO ES `always()`. `needs` cancela el job si una dependencia se saltea, y `ci` se saltea
   # legítimamente cuando el commit no toca la allowlist — ahí el release igual tiene que correr. Pero un
@@ -111,7 +118,7 @@ jobs:
       packages: read
       pull-requests: write
     container:
-      image: ghcr.io/nicolasbatistoni/cicd-toolkit:latest
+      image: ghcr.io/nicolasbatistoni/cicd-toolkit:0.89.0@sha256:1760fc8a736bebd5d69e890f847886291848bbcdc77f4ad2c3537b432f6b2c7f
       credentials:
         username: ${{ secrets.GHCR_USER }}
         password: ${{ secrets.GHCR_TOKEN }}
@@ -138,7 +145,7 @@ jobs:
       contents: write      # el merge escribe en la rama por defecto
       pull-requests: write # y cierra la PR
     container:
-      image: ghcr.io/nicolasbatistoni/cicd-toolkit:latest
+      image: ghcr.io/nicolasbatistoni/cicd-toolkit:0.89.0@sha256:1760fc8a736bebd5d69e890f847886291848bbcdc77f4ad2c3537b432f6b2c7f
       credentials:
         username: ${{ secrets.GHCR_USER }}
         password: ${{ secrets.GHCR_TOKEN }}

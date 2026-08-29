@@ -1,10 +1,26 @@
 #!/usr/bin/env bash
-# pre-push (AGENTS §7): bloquea push directo y force-push (non-fast-forward) a la rama principal.
-# No saltear con --no-verify; prohibido --force sobre main.
+# pre-push (AGENTS §7): bloquea el push directo y el force-push a la rama principal, y en las ramas de
+# trabajo sólo deja pisar lo que YA CONOCÉS (la semántica de `--force-with-lease`).
+# No saltear con --no-verify.
+#
+# ── POR QUÉ NO BLOQUEA TODO FORCE-PUSH ───────────────────────────────────────────────────────────────
+# Antes lo hacía, en cualquier rama. Pero §7 prohíbe el force-push "sobre la rama principal", y en una
+# rama de trabajo reescribir la historia es la operación NORMAL: es lo que deja un rebase. Bloquearla no
+# agrega seguridad — empuja a llenar la rama de commits de merge, o directamente a saltear el hook con
+# `--no-verify`, que §7 también prohíbe. Una regla que obliga a violar otra regla no protege nada.
+#
+# Lo que SÍ es peligroso de un force-push es pisar commits que **nunca viste** (los de otro que empujó
+# mientras vos rebaseabas). Eso es exactamente lo que `--force-with-lease` evita, y es la condición que
+# se verifica acá: el sha remoto que vas a reemplazar tiene que ser **idéntico** al de tu remote-tracking
+# (`refs/remotes/<remote>/<rama>`). Si el remoto se movió, o si nunca fetcheaste esa rama, se bloquea.
+#
+# Es una verificación del hook, no una confianza en el flag: `--force` "a secas" también queda cubierto,
+# porque lo que se compara es el estado, no cómo lo pediste.
 set -euo pipefail
 
 protected="refs/heads/main refs/heads/master"
 z="0000000000000000000000000000000000000000"
+remote="${1:-origin}" # git pasa <remote-name> <remote-url>
 
 while read -r _local_ref local_sha remote_ref remote_sha; do
   for p in $protected; do
@@ -13,12 +29,28 @@ while read -r _local_ref local_sha remote_ref remote_sha; do
       exit 1
     fi
   done
-  # Force-push (non-fast-forward) a cualquier rama: el remoto existe y no es ancestro del local.
-  if [ "$remote_sha" != "$z" ] && [ "$local_sha" != "$z" ]; then
-    if ! git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null; then
-      echo "✗ pre-push: force-push / non-fast-forward bloqueado sobre '${remote_ref#refs/heads/}'." >&2
-      exit 1
-    fi
+
+  # Sin remoto previo (rama nueva) o borrando la rama: no se pisa nada.
+  [ "$remote_sha" = "$z" ] && continue
+  [ "$local_sha" = "$z" ] && continue
+
+  # Fast-forward: el caso normal.
+  git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null && continue
+
+  # A partir de acá es un force-push sobre una rama de trabajo. Sólo pasa con el lease al día.
+  rama="${remote_ref#refs/heads/}"
+  visto="$(git rev-parse -q --verify "refs/remotes/${remote}/${rama}" 2>/dev/null || true)"
+  if [ -z "$visto" ]; then
+    echo "✗ pre-push: force-push sobre '${rama}' bloqueado — no tenés 'refs/remotes/${remote}/${rama}'," >&2
+    echo "  así que no podés saber qué estás pisando. Corré 'git fetch ${remote}' y mirá el diff." >&2
+    exit 1
   fi
+  if [ "$visto" != "$remote_sha" ]; then
+    echo "✗ pre-push: force-push sobre '${rama}' bloqueado — el remoto se movió desde tu último fetch." >&2
+    echo "  vos conocés ${visto:0:8} y el remoto está en ${remote_sha:0:8}: pisarlo perdería ese commit." >&2
+    echo "  Corré 'git fetch ${remote}' y reconciliá antes de reintentar." >&2
+    exit 1
+  fi
+  echo "⚠ pre-push: force-push sobre '${rama}' (rama de trabajo, lease al día en ${remote_sha:0:8})." >&2
 done
 exit 0
