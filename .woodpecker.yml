@@ -9,7 +9,7 @@
 # que un copiado.
 
 variables:
-  - &toolkit ghcr.io/nicolasbatistoni/cicd-toolkit:latest
+  - &toolkit ghcr.io/nicolasbatistoni/cicd-toolkit:0.89.0@sha256:1760fc8a736bebd5d69e890f847886291848bbcdc77f4ad2c3537b432f6b2c7f
 
   # Allowlist de disparo (AGENTS §1.ter). Fuente: `.paths` del cicd.yml — acá es DERIVADA.
   # INVARIANTE: un pipeline corre si y solo si el commit tocó código del paquete, código de una
