@@ -23,7 +23,14 @@ while IFS=$'\t' read -r status path; do
 done < <(git diff --cached --name-status --diff-filter=AM)
 
 # Secrets obvios en el contenido staged.
-if git diff --cached -U0 --diff-filter=AM | grep -nEi \
+#
+# SÓLO las líneas AGREGADAS (`^+`, sin la cabecera `+++`): un `-U0` crudo trae también las BORRADAS, y
+# borrar un secret —o una línea que sólo lo menciona— quedaba bloqueado como si se estuviera agregando.
+# Y SIN `.githooks/`: este mismo archivo contiene los patrones que busca, así que actualizar el hook
+# lo hacía detectarse a sí mismo. Medido 2026-08-29 en otara-labs al regenerar los hooks con 0.89.1:
+# el diff traía `-   | grep -v 'AKIAIOSFODNN7EXAMPLE'` (línea borrada, del propio hook) y el commit no
+# salía — y con --no-verify prohibido, tampoco había salida.
+if git diff --cached -U0 --diff-filter=AM -- . ':(exclude).githooks' | grep -E '^\+' | grep -vE '^\+\+\+' | grep -nEi \
    '(AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|ghp_[0-9A-Za-z]{36}|xox[baprs]-[0-9A-Za-z-]+)' >/dev/null; then
   echo "✗ pre-commit: posible secret en el diff staged. Revisá antes de commitear." >&2
   exit 1
