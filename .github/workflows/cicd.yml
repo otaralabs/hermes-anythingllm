@@ -20,8 +20,16 @@ on:
 # Se cancela el run previo de una PR (feedback rápido), pero NUNCA el de main: cancelar un push a main
 # dejaría un release sin su deploy, o sea una VERSIÓN FANTASMA. En Woodpecker esto era un setting de repo
 # (`cancel_previous_pipeline_events`); en Actions vive en el YAML, y por eso lo emite el generador.
+# ⚠⚠ Y main va en SU PROPIO CARRIL (2026-08-30). Con un único grupo por repo, la regla de «una sola
+# pendiente por grupo» aplicaba también ENTRE main y las PRs: la corrida de main quedaba pendiente detrás
+# de una PR, llegaba el push de otra PR y GitHub la cancelaba — medido en cicd-toolkit: tres merges a main
+# seguidos (22:26, 22:29, 00:07), los tres runs cancelados por runs de PR, y NINGÚN run de main posterior
+# que los cubriera: v0.90.1 quedó como último tag con dos fixes mergeados sin release. `changed-paths`
+# contra el último main verde sólo cubre a main cuando la que lo cancela es OTRA corrida de main; una PR
+# no releasea nada. Por eso el grupo de main lleva sufijo: sigue en serie consigo mismo (main-vs-main se
+# cubre como antes) y ninguna PR puede desplazarlo. Las PRs conservan el grupo único por repo.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.repository }}${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && '-main' || '' }}
   cancel-in-progress: false
 
 # Dentro de un `container:` Actions usa `sh -e {0}`, y en las imágenes del toolkit `sh` es dash, que no
@@ -43,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     container:
-      image: ghcr.io/nicolasbatistoni/cicd-toolkit:0.89.4@sha256:6da1c05d2e73d2ebb745257f7e910be05e07fd0c091baf68efb7bc5c2154e92a
+      image: ghcr.io/nicolasbatistoni/cicd-toolkit:0.91.0@sha256:8624ab97b7f5128b72e45c7559003ec78d3d9591c387d8deceb5f8797e8aca2e
       credentials:
         username: ${{ secrets.GHCR_USER }}
         password: ${{ secrets.GHCR_TOKEN }}
@@ -76,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     container:
-      image: ghcr.io/nicolasbatistoni/cicd-toolkit:0.89.4@sha256:6da1c05d2e73d2ebb745257f7e910be05e07fd0c091baf68efb7bc5c2154e92a
+      image: ghcr.io/nicolasbatistoni/cicd-toolkit:0.91.0@sha256:8624ab97b7f5128b72e45c7559003ec78d3d9591c387d8deceb5f8797e8aca2e
       credentials:
         username: ${{ secrets.GHCR_USER }}
         password: ${{ secrets.GHCR_TOKEN }}
@@ -118,7 +126,7 @@ jobs:
       packages: read
       pull-requests: write
     container:
-      image: ghcr.io/nicolasbatistoni/cicd-toolkit:0.89.4@sha256:6da1c05d2e73d2ebb745257f7e910be05e07fd0c091baf68efb7bc5c2154e92a
+      image: ghcr.io/nicolasbatistoni/cicd-toolkit:0.91.0@sha256:8624ab97b7f5128b72e45c7559003ec78d3d9591c387d8deceb5f8797e8aca2e
       credentials:
         username: ${{ secrets.GHCR_USER }}
         password: ${{ secrets.GHCR_TOKEN }}
@@ -145,7 +153,7 @@ jobs:
       contents: write      # el merge escribe en la rama por defecto
       pull-requests: write # y cierra la PR
     container:
-      image: ghcr.io/nicolasbatistoni/cicd-toolkit:0.89.4@sha256:6da1c05d2e73d2ebb745257f7e910be05e07fd0c091baf68efb7bc5c2154e92a
+      image: ghcr.io/nicolasbatistoni/cicd-toolkit:0.91.0@sha256:8624ab97b7f5128b72e45c7559003ec78d3d9591c387d8deceb5f8797e8aca2e
       credentials:
         username: ${{ secrets.GHCR_USER }}
         password: ${{ secrets.GHCR_TOKEN }}
