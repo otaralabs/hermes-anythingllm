@@ -20,7 +20,7 @@ paths_guard:
 images:
   # Pineado por versión+digest (INV-2): security corre render-pipeline --check con ESTA imagen; con :latest el
   # motor que verifica cambia solo y el gate se rompe sin que nadie toque nada (medido 2026-08-29 en la flota).
-  toolkit: ghcr.io/nicolasbatistoni/cicd-toolkit:0.91.0@sha256:8624ab97b7f5128b72e45c7559003ec78d3d9591c387d8deceb5f8797e8aca2e
+  toolkit: ghcr.io/nicolasbatistoni/cicd-toolkit:0.91.3@sha256:913e39f242b6edf86c786eb198156f0feab64a68f5e7c09c4731d10dfac98ea3
 
 release:
   artifact: none
