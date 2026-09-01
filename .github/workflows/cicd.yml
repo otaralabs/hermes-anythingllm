@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     container:
-      image: ghcr.io/nicolasbatistoni/cicd-toolkit:0.91.3@sha256:913e39f242b6edf86c786eb198156f0feab64a68f5e7c09c4731d10dfac98ea3
+      image: ghcr.io/nicolasbatistoni/cicd-toolkit:0.93.2@sha256:c3cac45e832a5f26ef43b4e65e8fdeec3b9901c8738d387e855c53ce6239dfc9
       credentials:
         username: ${{ secrets.GHCR_USER }}
         password: ${{ secrets.GHCR_TOKEN }}
@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     container:
-      image: ghcr.io/nicolasbatistoni/cicd-toolkit:0.91.3@sha256:913e39f242b6edf86c786eb198156f0feab64a68f5e7c09c4731d10dfac98ea3
+      image: ghcr.io/nicolasbatistoni/cicd-toolkit:0.93.2@sha256:c3cac45e832a5f26ef43b4e65e8fdeec3b9901c8738d387e855c53ce6239dfc9
       credentials:
         username: ${{ secrets.GHCR_USER }}
         password: ${{ secrets.GHCR_TOKEN }}
@@ -126,7 +126,7 @@ jobs:
       packages: read
       pull-requests: write
     container:
-      image: ghcr.io/nicolasbatistoni/cicd-toolkit:0.91.3@sha256:913e39f242b6edf86c786eb198156f0feab64a68f5e7c09c4731d10dfac98ea3
+      image: ghcr.io/nicolasbatistoni/cicd-toolkit:0.93.2@sha256:c3cac45e832a5f26ef43b4e65e8fdeec3b9901c8738d387e855c53ce6239dfc9
       credentials:
         username: ${{ secrets.GHCR_USER }}
         password: ${{ secrets.GHCR_TOKEN }}
@@ -154,7 +154,7 @@ jobs:
       contents: write      # el merge escribe en la rama por defecto
       pull-requests: write # y cierra la PR
     container:
-      image: ghcr.io/nicolasbatistoni/cicd-toolkit:0.91.3@sha256:913e39f242b6edf86c786eb198156f0feab64a68f5e7c09c4731d10dfac98ea3
+      image: ghcr.io/nicolasbatistoni/cicd-toolkit:0.93.2@sha256:c3cac45e832a5f26ef43b4e65e8fdeec3b9901c8738d387e855c53ce6239dfc9
       credentials:
         username: ${{ secrets.GHCR_USER }}
         password: ${{ secrets.GHCR_TOKEN }}
